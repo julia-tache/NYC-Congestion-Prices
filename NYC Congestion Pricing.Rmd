@@ -1,0 +1,441 @@
+---
+title: "NYC Congestion Pricing"
+output: html_document
+date: "2025-03-21"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r load packages}
+
+library(tidyverse)
+library(gsubfn)
+library(reshape2)
+
+```
+
+```{r load data}
+
+nyc_congestion_prices <- read_csv("MTA_Congestion_Relief_Zone_Vehicle_Entries__Beginning_2025_20250331.csv")
+nyc_mta_ridership <- read_csv("MTA_Daily_Ridership_and_Traffic__Beginning_2020_20250328.csv")
+nyc_operations <- read_csv("MTA_Statement_of_Operations__Beginning_2019_20250328.csv")
+
+nyc_congestion_prices$`Toll Date` <- as.Date(nyc_congestion_prices$`Toll Date`, "%m/%d/%Y")
+
+nyc_congestion_prices$`Toll 10 Minute Block Clean` <- str_remove(str_extract(nyc_congestion_prices$`Toll 10 Minute Block`, "\\d{2}:\\d{2}:\\d{2} [A-Z]{2}"), ":00")
+
+nyc_mta_ridership$Date <- as.Date(nyc_mta_ridership$Date, "%m/%d/%Y")
+
+nyc_mta_ridership$Month_Year <- format(nyc_mta_ridership$Date, "%b '%y")
+
+color_0 <- "#f79500"
+color_1 <- "#F0BD70" 
+color_2 <- "#43938A"
+color_3 <- "#2F6569"
+
+```
+
+
+
+```{r prices}
+
+toll <- c(21.6, 5.4, 14.4, 3.6, 4.5, 1.05, 9, 2.25)
+vehicle <- c("Large Trucks/Tour Buses", "Large Trucks/Tour Buses", "Small Trucks/Buses", "Small Trucks/Buses", "Motorcycles", "Motorcycles", "Passenger Vehicles", "Passenger Vehicles")
+vehicle <- factor(vehicle, levels = c("Large Trucks/Tour Buses", "Small Trucks/Buses", "Motorcycles", "Passenger Vehicles"))
+labels <- c("$21.60", "$5.40", "$14.40", "$3.60", "$4.50", "$1.05", "$9.00", "$2.25")
+
+data.frame(toll, vehicle, labels) %>%
+  ggplot(aes(x = vehicle, y = toll, color = vehicle)) +
+  geom_point(size = 3) +
+  geom_line(size = 2) +
+  scale_color_manual(values = c(color_1, color_0, color_2, color_3)) +
+  geom_text(label = labels, vjust = 2, hjust = 0.6, fontface = "bold", size = 4, family = "Georgia") +
+  coord_flip() +
+  ylim(0.5, 25) +
+  ggtitle("\nNYC Congestion Relief Zone Prices:                                   \nOvernight and Peak Hours                                    ") +
+  labs(subtitle = "Peak Hours: 5 AM - 9 PM Weekdays, 9 AM - 9 PM Weekends                                                 ", caption = "Source: NYC Metropolitan Transportation Authority | github: julia-tache") +
+  theme(plot.background = element_rect(fill = "#F5F5F5", color = NA),
+        plot.margin = margin(0.25, 0.25, 0.25, 0.6, "cm"),
+        panel.background = element_rect(fill = "#F5F5F5", color = NA),
+        panel.grid.major = element_line(color = "#F5F5F5"),
+        panel.grid.minor = element_line(color = "#F5F5F5"),
+        plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
+        plot.subtitle = element_text(size = 11, hjust = 0.5, face = "italic"),
+        plot.caption = element_text(size = 9, face = "italic", hjust = 1),
+        axis.title.x = element_blank(),
+        axis.text.x = element_blank(),
+        axis.title.y = element_blank(),
+        axis.text.y = element_text(size = 13, hjust = 0),
+        axis.ticks = element_blank(),
+        legend.position = "none",
+        text = element_text(family = "Georgia", size = 13))
+
+ggsave("prices.png", height = 4, width = 7)
+
+```
+
+```{r vehicle entries Jan-Mar}
+
+entries_by_day <- nyc_congestion_prices %>%
+  group_by(`Toll Date`, `Day of Week`) %>%
+  summarize(total_entries = sum(`CRZ Entries`))
+
+entries_by_day$`Day of Week` <- sub("Saturday|Sunday", "Weekend", entries_by_day$`Day of Week`)
+entries_by_day$`Day of Week` <- sub("Monday|Tuesday|Wednesday|Thursday|Friday", "Weekday", entries_by_day$`Day of Week`)
+
+entries_by_day %>%
+  ggplot(aes(x = `Toll Date`, y = total_entries, fill = `Day of Week`)) +
+  geom_col(width = 0.75) +
+  scale_fill_manual(values = c(color_3, color_2)) +
+  scale_y_continuous(breaks = seq(0, 500000, by = 100000), labels = scales::comma_format(scale = .001, suffix = "K")) +
+  ggtitle("\nTotal Daily Entries into Congestion Relief Zone\n(All Locations)") +
+  labs(subtitle = "All entries from January 5, 2025 (beginning of program) to March 22, 2025", caption = "Source: NYC Metropolitan Transportation Authority | github: julia-tache") +
+  theme(plot.background = element_rect(fill = "#F5F5F5", color = NA),
+        plot.margin = margin(0.25, 0.25, 0.25, 0.6, "cm"),
+        panel.background = element_rect(fill = "#F5F5F5", color = NA),
+        panel.grid.major = element_line(color = "#F5F5F5"),
+        panel.grid.minor = element_line(color = "#F5F5F5"),
+        plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
+        plot.subtitle = element_text(size = 12, hjust = 0.5),
+        plot.caption = element_text(size = 10, face = "italic", hjust = 0.5),
+        axis.title.x = element_blank(),
+        axis.text.x = element_text(size = 12),
+        axis.title.y = element_blank(),
+        axis.text.y = element_text(size = 12),
+        axis.ticks.y = element_blank(),
+        legend.title = element_blank(),
+        legend.position = "top",
+        legend.background = element_rect(fill = "#F5F5F5"),
+        text = element_text(family = "Georgia", size = 13))
+
+ggsave("entries.png", height = 5, width = 8)
+
+```
+
+```{r vehicle entries by type}
+
+entries_by_day_type <- nyc_congestion_prices %>%
+  group_by(`Toll Date`, `Day of Week`, `Vehicle Class`) %>%
+  summarize(total_entries = sum(`CRZ Entries`))
+
+entries_by_day_type$`Vehicle Class` <- str_replace(entries_by_day_type$`Vehicle Class`, "\\d - ", "")
+
+entries_by_day_type$`Day of Week` <- sub("Saturday|Sunday", "Weekend", entries_by_day_type$`Day of Week`)
+entries_by_day_type$`Day of Week` <- sub("Monday|Tuesday|Wednesday|Thursday|Friday", "Weekday", entries_by_day_type$`Day of Week`)
+
+entries_by_day_type <- entries_by_day_type %>%
+  filter(`Toll Date` >= "2025-01-05" & `Toll Date` <= "2025-01-11" | `Toll Date` >= "2025-03-16" & `Toll Date` <= "2025-03-22") %>%
+  arrange(`Toll Date`)
+
+entries_by_day_type$Week <- c(rep("January 5, 2025 - January 11, 2025 (Weekdays)", 42), rep("March 16, 2025 - March 22, 2025 (Weekdays)", 42))
+
+entries_by_day_type <- entries_by_day_type %>%
+  filter(`Day of Week` == "Weekday") %>%
+  group_by(Week, `Vehicle Class`) %>%
+  summarize(mean_entries = mean(total_entries))
+
+entries_by_day_type$labels <- format(round(entries_by_day_type$mean_entries), big.mark = ",")
+
+entries_by_day_type %>%
+  ggplot(aes(x = reorder(`Vehicle Class`, -mean_entries), y = mean_entries)) +
+  geom_col(width = 0.75, fill = color_3) +
+  geom_label(aes(y = 75000, label = labels), label.padding = unit(0.6, "lines"), size = 4, fontface = "bold", family = "Georgia", color = "White", fill = color_3) +
+  facet_wrap(~Week, ncol = 1) +
+  scale_y_continuous(breaks = seq(0, 500000, by = 100000), labels = scales::comma_format(scale = .001, suffix = "K")) +
+  ggtitle("\nCRZ Entries by Vehicle") +
+  labs(subtitle = "Average daily weekday entries into New York City's Congestion Relief\nZone for the weeks of January 5th (Week 1) and March 16th (Week 11).", caption = "Source: NYC Metropolitan Transportation Authority | github: julia-tache") +
+  theme(plot.background = element_rect(fill = "#F5F5F5", color = NA),
+        plot.margin = margin(0.25, 0.25, 0.25, 0.6, "cm"),
+        panel.background = element_rect(fill = "#F5F5F5", color = NA),
+        panel.grid.major = element_line(color = "#F5F5F5"),
+        panel.grid.minor = element_line(color = "#F5F5F5"),
+        plot.title = element_text(size = 18, face = "bold", hjust = 0.5),
+        plot.subtitle = element_text(size = 12, hjust = 0.5),
+        plot.caption = element_text(size = 10, face = "italic", hjust = 0.5),
+        axis.title.x = element_blank(),
+        axis.text.x = element_text(size = 8),
+        axis.title.y = element_blank(),
+        axis.text.y = element_text(size = 12),
+        axis.ticks.y = element_blank(),
+        legend.title = element_blank(),
+        legend.position = "top",
+        legend.background = element_rect(fill = "#F5F5F5"),
+        text = element_text(family = "Georgia", size = 13))
+
+ggsave("entries_vehicles.png", height = 5, width = 8)
+
+```
+
+```{r vehicle entry breakdowns}
+
+entries_by_day_vehicle <- nyc_congestion_prices %>%
+  group_by(`Toll Date`, `Vehicle Class`, `Day of Week`) %>%
+  summarize(total_entries = sum(`CRZ Entries`))
+
+entries_by_day_vehicle$`Vehicle Class` <- str_replace(entries_by_day_vehicle$`Vehicle Class`, "\\d - ", "")
+
+entries_by_day_trucks <- entries_by_day_vehicle %>%
+  filter(`Vehicle Class` == "Single-Unit Trucks"| `Vehicle Class` == "Multi-Unit Trucks") %>%
+  filter(`Toll Date` > "2025-02-01") %>%
+  filter(`Day of Week` != "Saturday" ) %>%
+  filter(`Day of Week` != "Sunday")
+
+entries_by_day_trucks$`Vehicle Class` <- factor(entries_by_day_trucks$`Vehicle Class`, levels = c("Single-Unit Trucks", "Multi-Unit Trucks"))
+
+entries_by_day_trucks_mean <- entries_by_day_trucks %>%
+  arrange(`Vehicle Class`)
+
+colMeans(matrix(entries_by_day_trucks_mean$total_entries, nrow = 5))
+
+entries_by_day_trucks %>%
+  ggplot(aes(x = `Toll Date`, y = total_entries, fill = `Vehicle Class`)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  geom_smooth(se = FALSE, color = color_0, size = 0.5) +
+  annotate("label", x = as_date("2025-02-05"), y = 20000, label = "Week 5 Mean:\n23,929", size = 3.25, fill = color_2, color = "white", fontface = "bold", family = "Georgia") +
+  annotate("label", x = as_date("2025-02-05"), y = 6000, label = "Week 5 Mean:\n2,526", size = 3.25, fill = color_3, color = "white", fontface = "bold", family = "Georgia") +
+  annotate("label", x = as_date("2025-03-19"), y = 20000, label = "Week 11 Mean:\n22,643", size = 3.25, fill = color_2, color = "white", fontface = "bold", family = "Georgia") +
+  annotate("label", x = as_date("2025-03-19"), y = 6000, label = "Week 11 Mean:\n1,473", size = 3.25, fill = color_3, color = "white", fontface = "bold", family = "Georgia") +
+  scale_fill_manual(values = c(color_2, color_3)) +
+  scale_y_continuous(breaks = seq(0, 25000, by = 5000), labels = scales::comma_format(scale = .001, suffix = "K")) +
+  ggtitle("\nTruck Entries into Congestion Relief Zone\n(All Locations - Weekdays Only)") +
+  labs(subtitle = "Truck entries into the CRZ appear to be decreasing.\nDuring peak periods, small trucks pay a toll of $14.40 and large trucks\npay a toll of $21.60. The peak toll for passenger vehicles is $9.00.", caption = "Source: NYC Metropolitan Transportation Authority | github: julia-tache") +
+  theme(plot.background = element_rect(fill = "#F5F5F5", color = NA),
+        plot.margin = margin(0.25, 0.25, 0.25, 0.6, "cm"),
+        panel.background = element_rect(fill = "#F5F5F5", color = NA),
+        panel.grid.major = element_line(color = "#F5F5F5"),
+        panel.grid.minor = element_line(color = "#F5F5F5"),
+        plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
+        plot.subtitle = element_text(size = 12, hjust = 0.5),
+        plot.caption = element_text(size = 10, face = "italic", hjust = 0.5),
+        axis.title.x = element_blank(),
+        axis.text.x = element_text(size = 10),
+        axis.title.y = element_blank(),
+        axis.text.y = element_text(size = 12),
+        axis.ticks.y = element_blank(),
+        legend.title = element_blank(),
+        legend.position = "top",
+        legend.background = element_rect(fill = "#F5F5F5"),
+        text = element_text(family = "Georgia", size = 13))
+
+ggsave("trucks.png", height = 5, width = 7.5)
+
+```
+
+
+
+```{r early entry line graph}
+
+weeks_1_2 <- nyc_congestion_prices %>%
+  group_by(`Toll Date`, `Toll 10 Minute Block Clean`, `Hour of Day`) %>%
+  summarize(avg_entries = sum(`CRZ Entries`)) %>%
+  filter(`Toll Date` > "2025-01-05" & `Toll Date` < "2025-01-11" | `Toll Date` > "2025-01-12" & `Toll Date` < "2025-01-18") %>%
+  group_by(`Toll 10 Minute Block Clean`, `Hour of Day`) %>%
+  summarize(avg_entries_block = mean(avg_entries)) %>%
+  arrange(`Hour of Day`) %>%
+  mutate(Week = "January 5, 2025 - January 18, 2025 (Weekdays)")
+
+weeks_9_10 <- nyc_congestion_prices %>%
+  group_by(`Toll Date`, `Toll 10 Minute Block Clean`, `Hour of Day`) %>%
+  summarize(avg_entries = sum(`CRZ Entries`)) %>%
+  filter(`Toll Date` > "2025-03-09" & `Toll Date` < "2025-03-15" | `Toll Date` > "2025-03-16" & `Toll Date` < "2025-03-22") %>%
+  group_by(`Toll 10 Minute Block Clean`, `Hour of Day`) %>%
+  summarize(avg_entries_block = mean(avg_entries)) %>%
+  arrange(`Hour of Day`) %>%
+  mutate(Week = "March 9, 2025 - March 22, 2025 (Weekdays)")
+
+entries <- rbind(weeks_1_2, weeks_9_10)
+
+entries$`Toll 10 Minute Block Clean` <- str_remove(entries$`Toll 10 Minute Block Clean`, "^0+")
+
+entries$`Toll 10 Minute Block Clean` <- factor(entries$`Toll 10 Minute Block Clean`, levels = c("12:00 AM", "12:10 AM", "12:20 AM", "12:30 AM", "12:40 AM", "12:50 AM", "1:00 AM", "1:10 AM", "1:20 AM", "1:30 AM", "1:40 AM","1:50 AM", "2:00 AM", "2:10 AM", "2:20 AM", "2:30 AM", "2:40 AM", "2:50 AM", "3:00 AM", "3:10 AM", "3:20 AM", "3:30 AM", "3:40 AM", "3:50 AM", "4:00 AM", "4:10 AM", "4:20 AM", "4:30 AM", "4:40 AM", "4:50 AM", "5:00 AM", "5:10 AM", "5:20 AM", "5:30 AM", "5:40 AM", "5:50 AM", "6:00 AM", "6:10 AM", "6:20 AM", "6:30 AM", "6:40 AM", "6:50 AM", "7:00 AM", "7:10 AM", "7:20 AM", "7:30 AM", "7:40 AM", "7:50 AM", "8:00 AM", "8:10 AM", "8:20 AM", "8:30 AM", "8:40 AM", "8:50 AM", "9:00 AM", "9:10 AM", "9:20 AM", "9:30 AM", "9:40 AM", "9:50 AM", "10:00 AM", "10:10 AM", "10:20 AM", "10:30 AM", "10:40 AM", "10:50 AM", "11:00 AM", "11:10 AM", "11:20 AM", "11:30 AM", "11:40 AM", "11:50 AM", "12:00 PM", "12:10 PM", "12:20 PM", "12:30 PM", "12:40 PM", "12:50 PM", "1:00 PM", "1:10 PM", "1:20 PM", "1:30 PM", "1:40 PM", "1:50 PM", "2:00 PM", "2:10 PM", "2:20 PM", "2:30 PM", "2:40 PM", "2:50 PM", "3:00 PM", "3:10 PM", "3:20 PM", "3:30 PM", "3:40 PM", "3:50 PM", "4:00 PM", "4:10 PM", "4:20 PM", "4:30 PM", "4:40 PM", "4:50 PM", "5:00 PM", "5:10 PM", "5:20 PM", "5:30 PM", "5:40 PM", "5:50 PM", "6:00 PM", "6:10 PM", "6:20 PM", "6:30 PM", "6:40 PM", "6:50 PM", "7:00 PM", "7:10 PM", "7:20 PM", "7:30 PM", "7:40 PM", "7:50 PM", "8:00 PM", "8:10 PM", "8:20 PM", "8:30 PM", "8:40 PM", "8:50 PM", "9:00 PM", "9:10 PM", "9:20 PM", "9:30 PM", "9:40 PM", "9:50 PM", "10:00 PM", "10:10 PM", "10:20 PM", "10:30 PM", "10:40 PM", "10:50 PM", "11:00 PM", "11:10 PM", "11:20 PM", "11:30 PM", "11:40 PM", "11:50 PM"))
+
+ggplot(entries, aes(`Toll 10 Minute Block Clean`, y = avg_entries_block)) +
+  geom_vline(xintercept = "5:00 AM", linetype = "twodash", 
+                color = color_0, size = 1.5) +
+  geom_vline(xintercept = "9:00 PM", linetype = "twodash", 
+                color = color_0, size = 1.5) +
+  geom_text(aes(x = "4:00 AM", y = 4500, label = "5 AM"), family = "Georgia", color = color_0) +
+  geom_text(aes(x = "8:00 PM", y = 4500, label = "9 PM"), family = "Georgia", color = color_0) +
+  geom_line(group = 1, color = color_3, size = 1.5) +
+  facet_wrap(~Week, ncol = 1) +
+  scale_x_discrete(breaks = entries$`Toll 10 Minute Block Clean`[seq(1,length(entries$`Toll 10 Minute Block Clean`), by = 18)]) +
+  ggtitle("\nWeekday Congestion Relief Zone Entries by Time of Day") +
+  scale_y_continuous(labels = scales::comma) +
+  labs(subtitle = "Average CRZ entries for Weeks 1 & 2 and Weeks 10 & 11 of NYC's congestion\npricing program. There's a small spike in entries just before 5:00 AM when\npeak pricing goes into effect, but most commuters enter within peak hours.", caption = "Source: NYC Metropolitan Transportation Authority | github: julia-tache") +
+  theme(plot.background = element_rect(fill = "#F5F5F5", color = NA),
+        plot.margin = margin(0.25, 0.25, 0.25, 0.6, "cm"),
+        panel.background = element_rect(fill = "#F5F5F5", color = NA),
+        panel.grid.major = element_line(color = "#F5F5F5"),
+        panel.grid.minor = element_line(color = "#F5F5F5"),
+        plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
+        plot.subtitle = element_text(size = 12, hjust = 0.5),
+        plot.caption = element_text(size = 10, face = "italic", hjust = 0.5),
+        axis.title.x = element_blank(),
+        axis.text.x = element_text(size = 10),
+        axis.title.y = element_blank(),
+        axis.text.y = element_text(size = 12),
+        axis.ticks = element_blank(),
+        legend.position = "none",
+        text = element_text(family = "Georgia", size = 13))
+
+ggsave("entries_time.png", height = 5, width = 8)
+
+```
+
+```{r commute times on select routes}
+
+# morning times: 7-9 AM, evening times: 5-7 PM, 15 min increments
+
+holland_tunnel_morn_pre <- c(mean(23, 22, 21, 21, 19, 18, 17, 17, 16), mean(15, 16, 14, 14, 15, 14, 13, 13, 13), mean(17, 18, 18, 18, 18, 16, 16, 16, 16), mean(20, 19, 19, 17, 18, 16, 16, 15, 16), mean(16, 17, 16, 14, 13, 13, 13, 12, 11))
+
+holland_tunnel_aft_pre <- c(mean(22, 23, 23, 23, 22, 22, 22, 21, 20), mean(24, 23, 22, 24, 24, 21, 19, 18, 17), mean(15, 15, 15, 15, 15, 15, 14, 13, 14), mean(24, 23, 24, 25, 24, 25, 24, 22, 22), mean(30, 28, 27, 26, 27, 27, 25, 25, 24))
+
+holland_tunnel_morn_post <- c(mean(14, 14, 14, 14, 13, 13, 13, 12, 12), mean(13, 13, 14, 13, 14, 14, 13, 14, 13), mean(12, 13, 13, 13, 12, 13, 12, 12, 13), mean(13, 13, 14, 13, 13, 13, 13, 12, 12), mean(10, 11, 11, 11, 11, 11, 12, 12, 12))
+
+holland_tunnel_aft_post <- c(mean(10, 10, 10, 10, 10, 10, 9, 9, 9), mean(11, 11, 11, 12, 11, 11, 11, 10, 9), mean(11, 12, 12, 12, 12, 12, 11, 10, 9), mean(13, 13, 13, 17, 13, 13, 12, 11, 10), mean(15, 14, 15, 15, 15, 14, 14, 13, 13))
+
+williamsburg_tunnel_morn_pre <- c(mean(7, 7, 8, 11, 11, 13, 13, 14, 14), mean(6, 6, 8, 8, 9, 9, 10, 10, 11), mean(6, 7, 7, 7, 8, 7, 7, 8, 9), mean(7, 7, 8, 9, 10, 10, 11, 12, 14), mean(7, 6, 8, 9, 10, 10, 9, 11, 11))
+
+williamsburg_aft_pre <- c(mean(13, 13, 13, 13, 12, 12, 11, 10, 10), mean(14, 15, 14, 14, 14, 15, 14, 13, 11), mean(14, 13, 12, 12, 11, 11, 12, 8, 10), mean(13, 14, 15, 16, 16, 16, 15, 13, 12), mean(16, 18, 17, 17, 15, 13, 13, 13, 12))
+
+williamsburg_tunnel_morn_post <- c(mean(5, 5, 6, 6, 7, 8, 8, 9, 9), mean(5, 5, 6, 7, 8, 9, 11, 12, 13), mean(6, 6, 6, 7, 8, 9, 10, 11, 11), mean(6, 6, 6, 7, 7, 9, 10, 10, 11), mean(5, 6, 6, 6, 7, 8, 8, 10, 10))
+
+williamsburg_aft_post <- c(mean(7, 7, 7, 7, 7, 7, 6, 6, 5), mean(7, 7, 7, 6, 7, 6, 6, 6, 6), mean(8, 8, 7, 7, 7, 7, 7, 7, 7), mean(9, 8, 8, 8, 8, 8, 8, 8, 8), mean(9, 9, 9, 8, 8, 8, 8, 7, 7))
+
+day_of_week <- c("Mon", "Tues", "Wed", "Thurs", "Fri")
+
+melt(data.frame(day_of_week, holland_tunnel_morn_pre, holland_tunnel_morn_post, holland_tunnel_aft_pre, holland_tunnel_aft_post, williamsburg_tunnel_morn_pre, williamsburg_tunnel_morn_post, williamsburg_aft_pre, williamsburg_aft_post), id.vars = "day_of_week") %>%
+  mutate(tunnel_bridge = c(rep("Holland Tunnel", 20), rep("Williamsburg Bridge", 20))) %>%
+  mutate(time_of_day = c(rep("Morning", 10), rep("Afternoon", 10), rep("Morning", 10), rep("Afternoon", 10))) %>%
+  mutate(pre_post = c(rep("Pre-Toll", 5), rep("Post-Toll", 5), rep("Pre-Toll", 5), rep("Post-Toll", 5), rep("Pre-Toll", 5), rep("Post-Toll", 5), rep("Pre-Toll", 5), rep("Post-Toll", 5))) %>%
+  mutate(pre_post = factor(pre_post, levels = c("Pre-Toll", "Post-Toll"))) %>%
+  mutate(time_of_day = factor(time_of_day, levels = c("Morning", "Afternoon"))) %>%
+  mutate(day_of_week = factor(day_of_week, levels = c("Mon", "Tues", "Wed", "Thurs", "Fri"))) %>%
+  rename("Average Minutes" = "value") %>%
+  ggplot(aes(x = day_of_week, y = `Average Minutes`, fill = pre_post)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  facet_grid(time_of_day~tunnel_bridge) +
+  scale_fill_manual(values = c(color_2, color_3)) +
+  ggtitle("CRZ Average Commute Times") +
+  labs(subtitle = "Estimated weekday commute times for the Holland Tunnel (New Jersey)\nand the Williamsburg Bridge (Brooklyn), two popular routes that enter\nthe Manhattan Congestion Relief Zone, are down since the\nimplementation of congestion pricing.", caption = "Morning: 7 AM - 9 AM, Afternoon: 5 PM - 7 PM\n\nSource: Joshua and Ben Moshes (Congestion Pricing Tracker) | github: julia-tache") +
+  theme(plot.background = element_rect(fill = "#F5F5F5", color = NA),
+        plot.margin = margin(0.25, 0.25, 0.25, 0.6, "cm"),
+        panel.background = element_rect(fill = "#F5F5F5", color = NA),
+        panel.grid.major = element_line(color = "#F5F5F5"),
+        panel.grid.minor = element_line(color = "#F5F5F5"),
+        plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
+        plot.subtitle = element_text(size = 11, hjust = 0.5),
+        plot.caption = element_text(size = 9, face = "italic", hjust = 0.5),
+        axis.title.x = element_blank(),
+        axis.text.x = element_text(size = 10),
+        axis.title.y = element_text(size = 12),
+        axis.text.y = element_text(size = 12),
+        axis.ticks = element_blank(),
+        legend.position = "right",
+        legend.title = element_blank(),
+        legend.background = element_rect(fill = "#F5F5F5"),
+        text = element_text(family = "Georgia", size = 13))
+
+nyc_mta_ridership %>%
+  filter(Mode == "BT") %>%
+  group_by(Month_Year) %>%
+  summarize(n = sum(Count))
+
+ggsave("commute_times.png", height = 4, width = 7)
+
+```
+
+```{r public transit}
+
+nyc_mta_ridership$Weekday <- weekdays(as.Date(nyc_mta_ridership$Date))
+
+nyc_mta_ridership_sub <- nyc_mta_ridership %>%
+  filter(Date >= "2024-01-01") %>%
+  filter(Mode == "Bus" | Mode == "Subway") %>%
+  group_by(Month_Year, Mode) %>%
+  summarize(Count = round(mean(Count)))
+
+nyc_mta_ridership_sub$Month_Year <- ifelse(nyc_mta_ridership_sub$Month_Year != "Jan '24", str_remove(nyc_mta_ridership_sub$Month_Year, " '24"), "Jan '24")
+nyc_mta_ridership_sub$Month_Year <- ifelse(nyc_mta_ridership_sub$Month_Year != "Jan '25", str_remove(nyc_mta_ridership_sub$Month_Year, "'25"), "Jan '25")
+
+nyc_mta_ridership_sub$Month_Year <- factor(nyc_mta_ridership_sub$Month_Year, levels = c("Jan '24", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan '25", "Feb ", "Mar "))
+
+nyc_mta_ridership_sub$labels <- paste0(round(nyc_mta_ridership_sub$Count/1000000, digits = 2), "M")
+
+nyc_mta_ridership_sub %>%
+  ggplot(aes(x = Month_Year, y = Count, color = Mode)) +
+  geom_line(group = 1, size = 0.75) +
+  geom_point() +
+  scale_color_manual(values = c(color_2, color_3, color_0)) +
+  facet_wrap(~Mode, ncol = 1, scales = "free") +
+  geom_text(aes(label = ifelse(Month_Year == "Mar", labels, ""), vjust = -1.5), fontface = "bold", family = "Georgia") +
+  geom_text(aes(label = ifelse(Month_Year == "Mar ", labels, ""), vjust = 2.75), fontface = "bold", family = "Georgia") +
+  ggtitle("\nNYC MTA Ridership") +
+  scale_y_continuous(labels = scales::comma_format(scale = .001, suffix = "K")) +
+  labs(subtitle = "Congestion pricing went into effect in January of 2025.\nAverage daily subway and bus ridership are up in 2025 compared to\nthe same months the year prior.", caption = "Source: NYC Metropolitan Transportation Authority | github: julia-tache\nPlease note that the data only go up to March 26th at this time.") +
+  ylab("Average Daily Rides") +
+  theme(plot.background = element_rect(fill = "#F5F5F5", color = NA),
+        plot.margin = margin(0.25, 0.25, 0.25, 0.6, "cm"),
+        panel.background = element_rect(fill = "#F5F5F5", color = NA),
+        panel.grid.major = element_line(color = "#F5F5F5"),
+        panel.grid.minor = element_line(color = "#F5F5F5"),
+        plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
+        plot.subtitle = element_text(size = 12, hjust = 0.5),
+        plot.caption = element_text(size = 9, face = "italic", hjust = 0.5),
+        axis.title.x = element_blank(),
+        axis.text.x = element_text(size = 9.5),
+        axis.title.y = element_text(size = 12),
+        axis.text.y = element_text(size = 10),
+        axis.ticks = element_blank(),
+        legend.position = "none",
+        text = element_text(family = "Georgia", size = 13))
+
+ggsave("public_trans.png", height = 4.5, width = 8)
+
+```
+
+```{r subway and path ridership}
+
+nyc_mta_ridership_jan <- nyc_mta_ridership_sub %>%
+  filter(Month_Year == "Jan '24" | Month_Year == "Jan '25") %>%
+  filter(Mode != "Bus")
+
+nyc_mta_ridership_jan$Mode <- str_replace(nyc_mta_ridership_jan$Mode, "Subway", "NYC Subway")
+
+rbind(nyc_mta_ridership_jan, 
+  data.frame(Month_Year = c("Jan '24", "Jan '25"),
+           Count = c(59198, 67050),
+           Mode = "PATH",
+           labels = c("59.20K", "67.05K"))) %>%
+  mutate(Mode = factor(Mode, levels = c("NYC Subway", "PATH"))) %>%
+  mutate(labels = ifelse(Count < 1000000, paste0(format(round(Count/1000, digits = 1), big.mark = ","), "K"), paste0(format(round(Count/1000000, digits = 1), big.mark = ","), "M"))) %>%
+  ggplot(aes(x = Month_Year, y = Count, fill = Mode)) +
+  geom_bar(position = "dodge", stat = "identity") +
+  geom_text(aes(label = labels), size = 5, color = "white", fontface = "bold", vjust = 2, hjust = 0.55, family = "Georgia") +
+  scale_fill_manual(values = c(color_2, color_3)) +
+  facet_wrap(~Mode, scales = "free") +
+  ggtitle("Average Daily Public Transit Ridership since\npassage of NYC Congestion Pricing") +
+  labs(subtitle = "Average daily subway and PATH ridership (NYC stations only) were up in\nJanuary of 2025 compared to January of 2024.", caption = "NYC Metropolitan Transportation Authority and Port Authority of New York and New Jersey\ngithub: julia-tache") +
+  theme(plot.background = element_rect(fill = "#F5F5F5", color = NA),
+        plot.margin = margin(0.25, 0.25, 0.25, 0.6, "cm"),
+        panel.background = element_rect(fill = "#F5F5F5", color = NA),
+        panel.grid.major = element_line(color = "#F5F5F5"),
+        panel.grid.minor = element_line(color = "#F5F5F5"),
+        plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
+        plot.subtitle = element_text(size = 11, hjust = 0.5),
+        plot.caption = element_text(size = 9, face = "italic", hjust = 1),
+        axis.title.x = element_blank(),
+        axis.text.x = element_text(size = 10),
+        axis.title.y = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks = element_blank(),
+        legend.position = "none",
+        text = element_text(family = "Georgia", size = 13))
+
+ggsave("public_trans2.png", height = 4, width = 6)
+
+```
+
+
