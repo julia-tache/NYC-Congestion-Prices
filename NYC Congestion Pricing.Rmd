@@ -144,8 +144,8 @@ entries_by_day_type %>%
   geom_label(aes(y = 75000, label = labels), label.padding = unit(0.6, "lines"), size = 4, fontface = "bold", family = "Georgia", color = "White", fill = color_3) +
   facet_wrap(~Week, ncol = 1) +
   scale_y_continuous(breaks = seq(0, 500000, by = 100000), labels = scales::comma_format(scale = .001, suffix = "K")) +
-  ggtitle("\nCRZ Entries by Vehicle") +
-  labs(subtitle = "Average daily weekday entries into New York City's Congestion Relief\nZone for the weeks of January 5th (Week 1) and March 16th (Week 11).", caption = "Source: NYC Metropolitan Transportation Authority | github: julia-tache") +
+  ggtitle("\nCRZ Entries by Vehicle Type") +
+  labs(subtitle = "Average daily weekday entries into New York City's Congestion Relief\nZone for the weeks of January 5th (Week 1) and March 16th (Week 11)", caption = "Source: NYC Metropolitan Transportation Authority | github: julia-tache") +
   theme(plot.background = element_rect(fill = "#F5F5F5", color = NA),
         plot.margin = margin(0.25, 0.25, 0.25, 0.6, "cm"),
         panel.background = element_rect(fill = "#F5F5F5", color = NA),
